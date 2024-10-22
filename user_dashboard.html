@@ -1,73 +1,9 @@
-<?php
-session_start();
-
-// Check if user is logged in
-if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'user') {
-    header("Location: login.php");
-    exit();
-}
-
-// Database connection
-$host = 'localhost';
-$dbname = 'report';
-$username = 'root';
-$password = '';
-
-try {
-    $pdo = new PDO("mysql:host=$host;dbname=$dbname", $username, $password);
-    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-} catch(PDOException $e) {
-    die("Connection failed: " . $e->getMessage());
-}
-
-$message = '';
-$messageType = '';
-
-// Handle form submission
-if ($_SERVER["REQUEST_METHOD"] == "POST") {
-    $car_name = $_POST['car_name'];
-    $car_type = $_POST['car_type'];
-    $car_model = $_POST['car_model'];
-    $plate_number = $_POST['plate_number'];
-    $stolen_location = $_POST['stolen_location'];
-    $permanent_address = $_POST['permanent_address'];
-    $phone_number = $_POST['phone_number'];
-
-    // Handle file upload
-    $document = $_FILES['document'];
-    $documentPath = '';
-    
-    if ($document['error'] == UPLOAD_ERR_OK) {
-        $documentPath = 'uploads/' . basename($document['name']);
-        move_uploaded_file($document['tmp_name'], $documentPath);
-    }
-
-    // Insert the report into the database
-    try {
-        $stmt = $pdo->prepare("INSERT INTO stolen_car_reports (user_id, car_name, car_type, car_model, plate_number, stolen_location, permanent_address, phone_number, document_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
-        $stmt->execute([$_SESSION['user_id'], $car_name, $car_type, $car_model, $plate_number, $stolen_location, $permanent_address, $phone_number, $documentPath]);
-
-        $message = 'Report submitted successfully!';
-        $messageType = 'success';
-    } catch (PDOException $e) {
-        $message = 'Error: ' . $e->getMessage();
-        $messageType = 'error';
-    }
-}
-
-// Fetch user's reports
-$stmt = $pdo->prepare("SELECT * FROM stolen_car_reports WHERE user_id = ? ORDER BY created_at DESC");
-$stmt->execute([$_SESSION['user_id']]);
-$reports = $stmt->fetchAll();
-?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>User Dashboard - Stolen Car Reports</title>
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -91,20 +27,27 @@ $reports = $stmt->fetchAll();
             background-color: var(--background-color);
             color: var(--text-color);
             line-height: 1.6;
+            width: 100%;
+            overflow-x: hidden;
         }
 
         .header {
             background-color: var(--primary-color);
             color: white;
-            padding: 1rem 2rem;
+            padding: 1rem;
+            width: 100%;
+        }
+
+        .header-content {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            flex-wrap: wrap;
+            gap: 1rem;
         }
 
         .header h2 {
-            font-size: 1.5rem;
+            font-size: 1.25rem;
         }
 
         .logout-btn {
@@ -113,36 +56,29 @@ $reports = $stmt->fetchAll();
             padding: 0.5rem 1rem;
             text-decoration: none;
             border-radius: 4px;
-            transition: background-color 0.3s ease;
-        }
-
-        .logout-btn:hover {
-            background-color: #27ae60;
+            display: inline-block;
+            margin-left: 0.5rem;
         }
 
         .container {
+            width: 100%;
             max-width: 1200px;
-            margin: 2rem auto;
-            padding: 0 2rem;
+            margin: 1rem auto;
+            padding: 0 1rem;
         }
 
         .card {
             background-color: var(--card-background);
             border-radius: 8px;
             box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            padding: 2rem;
-            margin-bottom: 2rem;
-        }
-
-        .card h3 {
-            color: var(--primary-color);
-            margin-bottom: 1.5rem;
-            border-bottom: 2px solid var(--primary-color);
-            padding-bottom: 0.5rem;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            width: 100%;
         }
 
         .form-group {
-            margin-bottom: 1.5rem;
+            margin-bottom: 1rem;
+            width: 100%;
         }
 
         .form-group label {
@@ -158,44 +94,59 @@ $reports = $stmt->fetchAll();
             border: 1px solid #ddd;
             border-radius: 4px;
             font-size: 1rem;
-            transition: border-color 0.3s ease;
         }
 
-        .form-group input:focus,
-        .form-group textarea:focus {
-            border-color: var(--primary-color);
-            outline: none;
+        /* Table Responsive Design */
+        .reports-table-wrapper {
+            width: 100%;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
         }
 
-        button[type="submit"] {
-            background-color: var(--primary-color);
-            color: white;
-            padding: 0.8rem 1.5rem;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 1rem;
-            transition: background-color 0.3s ease;
+        .reports-table {
+            min-width: 100%;
+            border-collapse: collapse;
         }
 
-        button[type="submit"]:hover {
-            background-color: #2980b9;
+        .reports-table th,
+        .reports-table td {
+            padding: 0.75rem;
+            text-align: left;
+            white-space: nowrap;
         }
 
-        .success {
-            background-color: var(--success-color);
-            color: white;
-        }
+        /* Mobile-first approach for table */
+        @media (max-width: 768px) {
+            .reports-table {
+                display: block;
+            }
 
-        .error {
-            background-color: var(--error-color);
-            color: white;
-        }
+            .reports-table thead {
+                display: none;
+            }
 
-        .success, .error {
-            padding: 1rem;
-            border-radius: 4px;
-            margin-bottom: 1.5rem;
+            .reports-table tbody tr {
+                display: block;
+                margin-bottom: 1rem;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                padding: 0.5rem;
+            }
+
+            .reports-table td {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 0.5rem;
+                border: none;
+                white-space: normal;
+            }
+
+            .reports-table td::before {
+                content: attr(data-label);
+                font-weight: bold;
+                margin-right: 1rem;
+            }
         }
 
         .status-badge {
@@ -204,75 +155,69 @@ $reports = $stmt->fetchAll();
             font-size: 0.9em;
             font-weight: bold;
             text-transform: uppercase;
+            display: inline-block;
+            max-width: 100%;
+            text-align: center;
         }
 
-        .status-under_review { background-color: #ffeeba; color: #856404; }
-        .status-processing { background-color: #b8daff; color: #004085; }
-        .status-pending { background-color: #c3e6cb; color: #155724; }
-        .status-cancelled { background-color: #f5c6cb; color: #721c24; }
-
-        .reports-table {
+        button[type="submit"],
+        .check-status-btn {
             width: 100%;
-            border-collapse: separate;
-            border-spacing: 0;
-            margin-top: 1.5rem;
+            max-width: 300px;
+            margin: 1rem auto;
+            display: block;
+            padding: 0.8rem;
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
         }
 
-        .reports-table th,
-        .reports-table td {
+        #tokenDisplay {
+            word-break: break-all;
             padding: 1rem;
-            text-align: left;
-            border-bottom: 1px solid #ddd;
+            margin-top: 1rem;
+            background-color: #e8f5e9;
+            border-radius: 4px;
         }
 
-        .reports-table th {
-            background-color: #f8f9fa;
-            font-weight: bold;
-            color: var(--primary-color);
-        }
+        @media (min-width: 768px) {
+            .header {
+                padding: 1rem 2rem;
+            }
 
-        .reports-table tr:last-child td {
-            border-bottom: none;
-        }
-
-        .reports-table tr:hover {
-            background-color: #f5f5f5;
-        }
-
-        @media (max-width: 768px) {
             .container {
-                padding: 0 1rem;
+                padding: 0 2rem;
             }
 
             .card {
-                padding: 1.5rem;
+                padding: 2rem;
             }
 
-            .reports-table {
-                font-size: 0.9rem;
+            button[type="submit"],
+            .check-status-btn {
+                width: auto;
+                display: inline-block;
             }
         }
     </style>
 </head>
 <body>
     <div class="header">
-        <h2>User Dashboard</h2>
-        <div>
-            <span>Welcome, <?php echo htmlspecialchars($_SESSION['full_name']); ?></span>
-            <a href="index.php" class="logout-btn">Logout</a>
+        <div class="header-content">
+            <h2>User Dashboard</h2>
+            <div>
+                <span>Welcome, <span id="userName"></span></span>
+                <a href="index.html" class="logout-btn">Logout</a>
+            </div>
         </div>
     </div>
 
     <div class="container">
-        <?php if ($message): ?>
-            <div class="<?php echo $messageType; ?>">
-                <?php echo htmlspecialchars($message); ?>
-            </div>
-        <?php endif; ?>
-
         <div class="card">
             <h3>Report Stolen Car</h3>
-            <form method="POST" action="" enctype="multipart/form-data">
+            <form id="reportForm">
                 <div class="form-group">
                     <label for="car_name">Car Name</label>
                     <input type="text" id="car_name" name="car_name" required>
@@ -315,41 +260,109 @@ $reports = $stmt->fetchAll();
 
                 <button type="submit">Submit Report</button>
             </form>
+            <div id="tokenDisplay" style="display: none;"></div>
+        </div>
+
+        <div class="card">
+            <h3>Check Report Status</h3>
+            <div class="form-group">
+                <label for="reportToken">Enter Report Token</label>
+                <input type="text" id="reportToken" name="reportToken" required>
+            </div>
+            <button class="check-status-btn" onclick="checkReportStatus()">Check Status</button>
+            <div id="statusDisplay"></div>
         </div>
 
         <div class="card">
             <h3>Your Reports</h3>
-            <table class="reports-table">
-                <thead>
-                    <tr>
-                        <th>Car Details</th>
-                        <th>Location</th>
-                        <th>Status</th>
-                        <th>Admin Comments</th>
-                        <th>Date Submitted</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php foreach ($reports as $report): ?>
+            <div class="reports-table-wrapper">
+                <table class="reports-table">
+                    <thead>
                         <tr>
-                            <td>
-                                <strong><?php echo htmlspecialchars($report['car_name']); ?></strong><br>
-                                Model: <?php echo htmlspecialchars($report['car_model']); ?><br>
-                                Plate: <?php echo htmlspecialchars($report['plate_number']); ?>
-                            </td>
-                            <td><?php echo htmlspecialchars($report['stolen_location']); ?></td>
-                            <td>
-                                <span class="status-badge status-<?php echo $report['status']; ?>">
-                                    <?php echo ucfirst(str_replace('_', ' ', $report['status'])); ?>
-                                </span>
-                            </td>
-                            <td><?php echo $report['admin_comments'] ? htmlspecialchars($report['admin_comments']) : 'No comments yet'; ?></td>
-                            <td><?php echo date('M d, Y', strtotime($report['created_at'])); ?></td>
+                            <th>Car Details</th>
+                            <th>Location</th>
+                            <th>Status</th>
+                            <th>Admin Comments</th>
+                            <th>Date Submitted</th>
                         </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody id="reportsTableBody"></tbody>
+                </table>
+            </div>
         </div>
     </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/uuid/8.3.2/uuid.min.js"></script>
+    <script>
+        // Simulated user data
+        const userData = {
+            fullName: "John Doe",
+            reports: [
+                {
+                    carDetails: "Toyota Camry 2020",
+                    location: "123 Main St, City",
+                    status: "under_review",
+                    adminComments: "Investigating",
+                    dateSubmitted: "2024-10-20"
+                }
+            ]
+        };
+
+        // Display user name
+        document.getElementById('userName').textContent = userData.fullName;
+
+        // Populate reports table
+        function populateReportsTable() {
+            const tableBody = document.getElementById('reportsTableBody');
+            tableBody.innerHTML = '';
+            userData.reports.forEach(report => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td data-label="Car Details">${report.carDetails}</td>
+                    <td data-label="Location">${report.location}</td>
+                    <td data-label="Status"><span class="status-badge status-${report.status}">${report.status}</span></td>
+                    <td data-label="Admin Comments">${report.adminComments}</td>
+                    <td data-label="Date Submitted">${report.dateSubmitted}</td>
+                `;
+                tableBody.appendChild(row);
+            });
+        }
+
+        // Generate token
+        function generateToken() {
+            return uuid.v4();
+        }
+
+        // Handle form submission
+        document.getElementById('reportForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const token = generateToken();
+            document.getElementById('tokenDisplay').textContent = `Your report token is: ${token}`;
+            document.getElementById('tokenDisplay').style.display = 'block';
+            
+            // Here you would typically send the form data to a server
+            console.log("Form submitted. Token:", token);
+            
+            // Reset form
+            this.reset();
+        });
+
+        // Check report status
+        function checkReportStatus() {
+            const token = document.getElementById('reportToken').value;
+            const statusDisplay = document.getElementById('statusDisplay');
+            
+            // Here you would typically check the status from a server
+            // For this example, we'll just display a mock status
+            statusDisplay.innerHTML = `
+                <p>Status for token ${token}:</p>
+                <p><span class="status-badge status-under_review">Under Review</span></p>
+                <p>Last updated: ${new Date().toLocaleString()}</p>
+            `;
+        }
+
+        // Initialize page
+        populateReportsTable();
+    </script>
 </body>
 </html>
